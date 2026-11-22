@@ -317,3 +317,26 @@ def test_debugged_application_pin_security_false():
     # This should not raise AttributeError
     debugged = DebuggedApplication(app, evalex=True, pin_security=False)
     assert debugged.pin is None
+
+
+def test_debugger_frames_evicted_past_cap():
+    """The debugger only tracks a bounded number of frames.
+
+    Each frame keeps its local and global namespaces alive, so an
+    unbounded dictionary would pin application state for as long as the
+    development server keeps raising exceptions.
+    """
+
+    @Request.application
+    def app(request):
+        big = "x" * 1024 * 64
+        raise ValueError(big)
+
+    debugged = DebuggedApplication(app)
+    debugged._max_frames = 3
+    client = Client(debugged)
+
+    for _ in range(5):
+        client.get("/")
+
+    assert len(debugged.frames) <= 3

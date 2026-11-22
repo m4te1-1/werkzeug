@@ -261,6 +261,12 @@ class DebuggedApplication:
     _pin: str | None
     _pin_cookie: str
 
+    #: Maximum number of traceback frames kept for the interactive
+    #: debugger. Each frame retains its full local and global
+    #: namespaces, so an unbounded dictionary would keep growing for as
+    #: long as the development server raises exceptions.
+    _max_frames: int = 1000
+
     def __init__(
         self,
         app: wt.WSGIApplication,
@@ -351,6 +357,15 @@ class DebuggedApplication:
             for frame in tb.all_frames:
                 self.frames[id(frame)] = frame
                 self.frame_contexts[id(frame)] = contexts
+
+            # Evict the oldest frames past the cap. Frames keep their
+            # namespaces alive, so the debugger would otherwise pin an
+            # unbounded amount of application state when many requests
+            # raise exceptions.
+            while len(self.frames) > self._max_frames:
+                oldest = next(iter(self.frames))
+                self.frames.pop(oldest)
+                self.frame_contexts.pop(oldest, None)
 
             is_trusted = bool(self.check_pin_trust(environ))
             html = tb.render_debugger_html(
